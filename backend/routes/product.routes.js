@@ -2,6 +2,7 @@ const express = require('express');
 const Product = require('../models/product.model.js');
 const client=require('../redis.js');
 const router = express.Router();
+const mongoose = require('mongoose');
 
 // Middleware to check cache
 const checkCache = (req, res, next) => {
@@ -11,7 +12,8 @@ const checkCache = (req, res, next) => {
     if (err) throw err;
 
     if (data) {
-      res.status(200).json(data);
+      const parsedData = JSON.parse(data);
+      return res.json(parsedData);
     } else {
       next();
     }
@@ -22,14 +24,20 @@ const checkCache = (req, res, next) => {
 router.get('/:productId', checkCache, async (req, res) => {
   try {
     const { productId } = req.params;
+    // Ensure the productId is a valid ObjectId
+    if (!mongoose.Types.ObjectId.isValid(productId)) {
+      return res.status(400).send('Invalid product ID');
+    }
     const product = await Product.findById(productId);
-
+    if (!product) {
+      return res.status(404).send('Product not found');
+    }
     // Save response in Redis
     client.setex(`product:${productId}`, 3600, JSON.stringify(product)); // Cache for 1 hour
-
     res.json(product);
-  } catch (err) {
-    res.status(500).send(err);
+  }catch (err) {
+    console.error('Database error:', err);
+    res.status(500).send('Internal server error');
   }
 });
 
